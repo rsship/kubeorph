@@ -1,5 +1,4 @@
 use clap::Parser;
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
 use kube::api::ListParams;
 use kube::core::DynamicObject;
 use kube::discovery::ApiCapabilities;
@@ -54,13 +53,16 @@ struct App {
 
 impl App {
     async fn get(&self, api: Api<DynamicObject>, lp: ListParams) -> Result<()> {
-        let result = if let Some(n) = &self.name {
+        let mut result = if let Some(n) = &self.name {
             vec![api.get(n).await?]
         } else {
             api.list(&lp).await?.items
         };
 
         //NOTE: search managed fileds in k8s;
+        result
+            .iter_mut()
+            .for_each(|obj| obj.managed_fields_mut().clear());
 
         match self.output {
             OutputMode::Yaml => {}
@@ -99,7 +101,7 @@ async fn main() -> Result<()> {
     let discovery = Discovery::new(client.clone()).run().await?;
     if let Some(resource) = &app.resource {
         let (ar, caps) =
-            resolve_resouces_by_name(&discovery, resource).expect("No resources found");
+            resolve_resource_by_name(&discovery, resource).expect("No resources found");
 
         let mut lp = ListParams::default();
         if let Some(label) = &app.selector {
@@ -148,7 +150,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn resolve_resouces_by_name(
+fn resolve_resource_by_name(
     discovery: &Discovery,
     name: &str,
 ) -> Option<(ApiResource, ApiCapabilities)> {
@@ -165,4 +167,19 @@ fn resolve_resouces_by_name(
         })
         .min_by_key(|(group, _)| group.name())
         .map(|(_, res)| res)
+}
+
+fn resolve_resource_by_name2(
+    discovery: &Discovery,
+    name: &str,
+) -> Option<(ApiResource, ApiCapabilities)> {
+    for group in discovery.groups() {
+        for (ar, caps) in group.resources_by_stability() {
+            if name.eq_ignore_ascii_case(&ar.kind) || name.eq_ignore_ascii_case(&ar.plural) {
+                return Some((ar, caps));
+            }
+        }
+    }
+
+    None
 }
