@@ -1,17 +1,24 @@
+#![allow(dead_code)]
+
+mod size;
+
 use clap::Parser;
 use kube::api::ListParams;
+use kube::api::WatchParams;
 use kube::core::DynamicObject;
 use kube::discovery::ApiCapabilities;
 use kube::discovery::ApiResource;
 use kube::discovery::Discovery;
 use kube::discovery::Scope;
-use kube::runtime::watcher;
 use kube::Api;
 use kube::Client;
 use kube::ResourceExt;
+use size::terminal_size;
 use std::fmt::Formatter;
 
 use anyhow::Result;
+
+const CURRENT_TAB: u16 = 6;
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 enum OutputMode {
@@ -67,34 +74,54 @@ impl App {
         match self.output {
             OutputMode::Yaml => {}
             OutputMode::Pretty => {
-                // let max_name_len = result
-                //     .iter()
-                //     .map(|x| {
-                //         if let Some(name) = &x.metadata.name {
-                //             return name.len();
-                //         } else {
-                //             return 69;
-                //         }
-                //     })
-                //     .max()
-                //     .unwrap_or(69);
-                println!("{} {}", "NAME", "AGE");
-                for inst in result {
-                    let age = inst.creation_timestamp().map(|x| x.0).unwrap_or_default();
-                    let name = inst.metadata.name.unwrap_or("".to_string());
-                    println!("{} -> {:?}", name, age);
-                }
+                let width = result
+                    .iter()
+                    .map(|x| {
+                        if let Some(name) = &x.metadata.name {
+                            return name.len();
+                        } else {
+                            return 69;
+                        }
+                    })
+                    .max()
+                    .unwrap_or(69);
+
+                // NAMESPACE            NAME                                         READY   STATUS    RESTARTS   AGE
+                pretty_print(&result);
             }
         }
 
         Ok(())
     }
+
+    async fn watch(&self, api: Api<DynamicObject>, wc: WatchParams) -> Result<()> {
+        let mut stream = api.watch(&wc, "0").await?.boxed();
+
+        Ok(())
+    }
+
+    async fn edit(&self, api: Api<DynamicObject>) -> Result<()> {
+        todo!("Not implemented yet");
+    }
+
+    async fn apply(&self, api: Api<DynamicObject>) -> Result<()> {
+        todo!("Not implemeted yet");
+    }
+
+    async fn delete(&self, api: Api<DynamicObject>) -> Result<()> {
+        todo!("Not implemented yet");
+    }
+
+    // Get,
+    // Delete,
+    // Edit,
+    // Watch,
+    // Apply,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let app: App = clap::Parser::parse();
-    println!("{:?}", app);
 
     let client = Client::try_default().await?;
 
@@ -108,7 +135,7 @@ async fn main() -> Result<()> {
             lp = lp.labels(label);
         }
 
-        let mut wc = watcher::Config::default();
+        let mut wc = WatchParams::default();
         if let Some(label) = &app.selector {
             wc = wc.labels(label);
         }
@@ -127,22 +154,18 @@ async fn main() -> Result<()> {
             }
 
             Verb::Watch => {
-                todo!();
+                app.watch(dynapi, wc).await?;
             }
             Verb::Delete => {
-                todo!();
+                app.delete(dynapi).await?;
             }
 
             Verb::Edit => {
-                todo!();
+                app.edit(dynapi).await?;
             }
 
             Verb::Apply => {
-                todo!();
-            }
-
-            _ => {
-                todo!();
+                app.apply(dynapi).await?;
             }
         }
     }
@@ -182,4 +205,35 @@ fn resolve_resource_by_name2(
     }
 
     None
+}
+
+fn pretty_print(data: &Vec<DynamicObject>) {
+    let (_, height) = terminal_size().unwrap_or((30, 180));
+
+    let each_size = (height / CURRENT_TAB) as usize;
+
+    println!(
+        "{:<each_size$} {:<each_size$} {:<each_size$} {:<each_size$} {:<each_size$} {:<each_size$}",
+        "NAMESPACE", "NAME", "READY", "STATUS", "RESTARTS", "AGE"
+    );
+
+    for inst in data {
+        let mut status = String::from("None");
+
+        if let Some(s) = inst.data.get("status") {
+            if let Some(phase) = s.get("phase") {
+                status = phase.to_string();
+            }
+        }
+
+        println!(
+        "{:<each_size$} {:<each_size$} {:<each_size$} {:<each_size$} {:<each_size$} {:<each_size$}",
+        inst.namespace().unwrap() , inst.name_any(), "READY", status, "RESTARTS", "AGE"
+        );
+        break;
+    }
+}
+
+fn calculate_age() {
+    todo!()
 }
