@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 
+mod pretty;
 mod size;
 
 use clap::Parser;
+use futures::stream::StreamExt;
 use kube::api::ListParams;
 use kube::api::WatchParams;
 use kube::core::DynamicObject;
@@ -13,12 +15,9 @@ use kube::discovery::Scope;
 use kube::Api;
 use kube::Client;
 use kube::ResourceExt;
-use size::terminal_size;
 use std::fmt::Formatter;
 
 use anyhow::Result;
-
-const CURRENT_TAB: u16 = 6;
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 enum OutputMode {
@@ -86,8 +85,7 @@ impl App {
                     .max()
                     .unwrap_or(69);
 
-                // NAMESPACE            NAME                                         READY   STATUS    RESTARTS   AGE
-                pretty_print(&result);
+                pretty::pretty_print(result);
             }
         }
 
@@ -96,7 +94,6 @@ impl App {
 
     async fn watch(&self, api: Api<DynamicObject>, wc: WatchParams) -> Result<()> {
         let mut stream = api.watch(&wc, "0").await?.boxed();
-
         Ok(())
     }
 
@@ -205,35 +202,4 @@ fn resolve_resource_by_name2(
     }
 
     None
-}
-
-fn pretty_print(data: &Vec<DynamicObject>) {
-    let (_, height) = terminal_size().unwrap_or((30, 180));
-
-    let each_size = (height / CURRENT_TAB) as usize;
-
-    println!(
-        "{:<each_size$} {:<each_size$} {:<each_size$} {:<each_size$} {:<each_size$} {:<each_size$}",
-        "NAMESPACE", "NAME", "READY", "STATUS", "RESTARTS", "AGE"
-    );
-
-    for inst in data {
-        let mut status = String::from("None");
-
-        if let Some(s) = inst.data.get("status") {
-            if let Some(phase) = s.get("phase") {
-                status = phase.to_string();
-            }
-        }
-
-        println!(
-        "{:<each_size$} {:<each_size$} {:<each_size$} {:<each_size$} {:<each_size$} {:<each_size$}",
-        inst.namespace().unwrap() , inst.name_any(), "READY", status, "RESTARTS", "AGE"
-        );
-        break;
-    }
-}
-
-fn calculate_age() {
-    todo!()
 }
